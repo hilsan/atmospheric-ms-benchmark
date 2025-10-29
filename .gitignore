@@ -1,0 +1,22 @@
+# Ignore all files in data and reports recursively
+/data/*
+/reports/*
+
+# But keep the folder structure (empty folders aren’t tracked by Git, so we’ll use .gitkeep)
+!data/.gitkeep
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!reports/.gitkeep
+!reports/figures/.gitkeep
+!reports/paper/.gitkeep
+
+# Python / Jupyter typical ignores
+__pycache__/
+*.pyc
+*.pyo
+*.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
