@@ -1,0 +1,103 @@
+#!/bin/bash
+
+# Initial setup
+d=$(pwd)
+bname=$(basename "$d")
+
+DIR="$d/TMPQCXMS"
+if [ ! -d "$DIR" ]; then 
+    echo "Run mpspred first!"
+    exit 1
+fi
+
+echo "Starting parallel qcxms run on $DIR"
+
+cd "$DIR" || exit 1
+
+# Collect TMPQCXMS subdirectories
+dir_list=()
+for vz in */; do
+    vz=${vz%/}  # remove trailing slash
+    cd "$vz" || continue
+
+    # Check if qcxms finished successfully
+    if [ -f qcxms.out ] && grep -q "normal termination of QCxMS" qcxms.out; then
+        echo "Skipping $vz (already finished successfully)"
+        cd .. || continue
+        dir_list+=("$vz")
+        continue
+    else
+        # Clean previous outputs
+        rm -f *slurm *err *out
+    fi
+
+    cd .. || continue
+    dir_list+=("$vz")
+done
+
+TOTAL=${#dir_list[@]}
+echo "TOTAL = $TOTAL directories to process"
+
+# Maximum directories per array task
+PER_TASK=300
+ARRAY_SIZE=$(( (TOTAL + PER_TASK - 1) / PER_TASK ))  # ceil division
+
+echo "Submitting array job with $ARRAY_SIZE tasks (up to $PER_TASK dirs per task)"
+
+# Write SLURM script
+slurm_script="${bname}_multi.slurm"
+
+cat <<EOF > "$slurm_script"
+#!/bin/bash -l
+
+#SBATCH --account=project_2006752
+#SBATCH --partition=small
+#SBATCH --job-name=qcxms_multi
+#SBATCH --output=frag_%A_%a.out
+#SBATCH --error=frag_%A_%a.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=8000
+#SBATCH --time=12:00:00
+#SBATCH --array=0-$((ARRAY_SIZE - 1))
+
+set -x
+export OMP_NUM_THREADS=1
+
+DIR="$DIR"
+cd "\$DIR"
+
+# All directories to process
+dir_list=(${dir_list[@]})
+
+START_INDEX=\$(( SLURM_ARRAY_TASK_ID * PER_TASK ))
+END_INDEX=\$(( START_INDEX + PER_TASK - 1 ))
+if (( END_INDEX >= ${#dir_list[@]} )); then
+    END_INDEX=\$(( ${#dir_list[@]} - 1 ))
+fi
+
+for ((i=START_INDEX; i<=END_INDEX; i++)); do
+    vz=\${dir_list[i]}
+    VZ_DIR="\$DIR/\$vz"
+
+    if [ -d "\$VZ_DIR" ]; then
+        cd "\$VZ_DIR" || continue
+
+        # Skip if finished successfully
+        if [ -f qcxms.out ] && grep -q "normal termination of QCxMS" qcxms.out; then
+            echo "Skipping \$VZ_DIR (already finished)"
+        else
+            # Clean previous outputs
+            rm -f *slurm *err *out
+            qcxms --prod > qcxms.out 2>&1
+            touch ready
+        fi
+
+        cd "\$DIR"
+    fi
+done
+EOF
+
+# Submit the array job
+sbatch "$slurm_script"
+echo "Submitted single array job of $ARRAY_SIZE tasks for $TOTAL directories"

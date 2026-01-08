@@ -101,15 +101,14 @@ def get_file_format(filepath):
 # -----------------------------------------
 # SMILES / SDF handling
 # -----------------------------------------
-def generate_sdf_from_smiles(input_file, output_file, error_file=None, max_iters=200):
+def generate_sdf_from_smiles(smiles_list=None, output_file=None,  error_file=None, max_iters=200):
     """
-    Generate an SDF from a SMILES input file. Writes errors to error_file if provided.
+    Generate an SDF from a SMILES input file or a list of SMILES.
     """
-    error_file = error_file or os.path.join(os.path.dirname(input_file), "errors.log")
+
+
+    error_file = error_file or os.path.join(os.path.dirname(output_file), "errors.log")
     writer = SDWriter(output_file)
-    
-    with open(input_file, 'r') as file:
-        smiles_list = [line.strip() for line in file]
 
     for smiles in smiles_list:
         try:
@@ -118,25 +117,23 @@ def generate_sdf_from_smiles(input_file, output_file, error_file=None, max_iters
                 raise ValueError(f"Invalid SMILES: {smiles}")
             mol = Chem.AddHs(mol)
             Chem.Kekulize(mol, clearAromaticFlags=True)
-            
-            # Embed molecule in 3D
+
+            # Embed molecule
             params = AllChem.ETKDGv3()
             params.useExpTorsionAnglePrefs = False
             params.useBasicKnowledge = False
             if AllChem.EmbedMolecule(mol, params) != 0:
                 if AllChem.EmbedMolecule(mol, useRandomCoords=True) != 0:
                     raise ValueError("Embedding failed")
-            
-            # Optimize
+
             AllChem.UFFOptimizeMolecule(mol, maxIters=max_iters)
-            
             writer.write(mol)
         except Exception as e:
             with open(error_file, 'a') as ef:
                 ef.write(f"Error processing SMILES '{smiles}': {e}\n")
-    
     writer.close()
     return output_file
+
 
 
 def derivatize_molecule(smiles, substitute_secondary=True, substitute_primary=True):

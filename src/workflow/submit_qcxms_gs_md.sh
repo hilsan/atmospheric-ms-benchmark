@@ -84,20 +84,22 @@ cd MS-run
 cp ../xtbopt.sdf .
 
 # ------------------------------
-# Create qcxms.in with UNITY if needed
+# Run QCxMS2
 # ------------------------------
-echo "tmax 10" > qcxms.in
+echo "tmax 25" > qcxms.in
 echo "iseed 10" >> qcxms.in
 
 if (( ATOM_COUNT > 34 )); then
-    echo "UNITY enabled (atom count $ATOM_COUNT > 34)"
-    echo "unity" >> qcxms.in
+  qcxms -i xtbopt.sdf  > qcxms.out 2>&1
+  qcxms -i xtbopt.sdf --unity -v  > qcxms.out 2>&1
+   echo "UNITY not used (atom count $ATOM_COUNT > 34)"
+
+    
 else
+    qcxms -i xtbopt.sdf  > qcxms.out 2>&1
+    qcxms -i xtbopt.sdf  > qcxms.out 2>&1
     echo "UNITY not used (atom count $ATOM_COUNT <= 34)"
 fi
 
-# ------------------------------
-# Run QCxMS2
-# ------------------------------
-qcxms --prod > qcxms.out 2>&1
+
 
