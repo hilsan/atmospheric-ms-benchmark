@@ -68,6 +68,7 @@ def main():
     parser.add_argument("-o", "--output_file", required=True, help="Output CSV file for unique SMILES")
     parser.add_argument("--smiles_col", default='SMILES', help="Name of the SMILES column (default: SMILES)")
     parser.add_argument("--log_file", default=None, help="Optional CSV file to save duplicate mapping")
+    parser.add_argument("--index_map_file", default=None, help="Optional CSV file to save old->new index mapping")
     args = parser.parse_args()
 
     # Read input CSV
@@ -79,8 +80,14 @@ def main():
     # Replace SMILES with canonical
     df[args.smiles_col] = canonical_series
 
-    # Drop duplicates and reindex
+    # Drop duplicates
     df_clean = df.drop(index=to_drop).reset_index(drop=True)
+
+    # Build old->new index mapping
+    old_to_new_index = {old_idx: new_idx for new_idx, old_idx in enumerate(df_clean.index)}
+    # Actually, df_clean.index is already reset, we need mapping from original df indices
+    kept_indices = sorted(set(df.index) - set(to_drop))
+    old_to_new_index = {old_idx: new_idx for new_idx, old_idx in enumerate(kept_indices)}
 
     # Save cleaned CSV
     df_clean.to_csv(args.output_file, index=False)
@@ -90,6 +97,11 @@ def main():
     if args.log_file:
         pd.DataFrame(duplicate_info).to_csv(args.log_file, index=False)
         print(f"Saved duplicate mapping to {args.log_file}")
+
+    # Save old->new index mapping if requested
+    if args.index_map_file:
+        pd.DataFrame(list(old_to_new_index.items()), columns=['old_index', 'new_index']).to_csv(args.index_map_file, index=False)
+        print(f"Saved old->new index mapping to {args.index_map_file}")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Derivatize molecules in a CSV file using TMS on functional groups,
 plot substitution histogram, and optionally compare with reference TMS counts.
 
 Usage:
-    python make_TMS_derivative_v3.py -i input.csv -o output.csv [--compare_ref ref.csv]
+    python make_TMS_derivative_251125_v1.py -i input.csv -o output.csv [--compare_ref ref.csv]
 """
 
 import argparse
@@ -65,6 +65,7 @@ def derivatize_molecule(smiles, substitute_secondary, substitute_primary):
         smarts = Chem.MolFromSmarts(pattern)
         matches = mol.GetSubstructMatches(smarts)
         num_matches = len(matches)
+
         if num_matches > 0:
             mod_mol = Chem.ReplaceSubstructs(mol, smarts, Chem.MolFromSmarts(replacement_pattern), replaceAll=True)
             mol = mod_mol[0]
@@ -183,12 +184,14 @@ def main():
     with open(args.output_file, 'w') as f:
         f.write("Original_SMILES,Modified_SMILES,Total_Replacements,OH,SH,Primary_Amine,Secondary_Amine,Imine,OOH,COOH\n")
         for smi in df['SMILES']:
+
             try:
                 new_smiles, replacements = derivatize_molecule(
                     smi,
                     substitute_secondary=args.substitute_secondary,
                     substitute_primary=args.both_on_primary
                 )
+
                 total = sum(replacements.values())
                 processed_data.append({'Original_SMILES': smi, 'Modified_SMILES': new_smiles, 'Total_Replacements': total, **replacements})
                 f.write(f"{smi},{new_smiles},{total},{replacements['OH']},{replacements['SH']},{replacements['Primary Amine']},{replacements['Secondary Amine']},{replacements['Imine']},{replacements['OOH']},{replacements['COOH']}\n")

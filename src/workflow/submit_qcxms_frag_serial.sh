@@ -13,9 +13,39 @@ if [ ! -d "$DIR" ]; then
     exit 1
 fi
 
-echo "Starting parallel qcxms run on $DIR"
+echo "Starting parallel QCxMS run on $DIR"
 
 cd "$DIR" || exit 1
+
+# -------------------------------------------------------------------
+#   Determine atom count (once per molecule)
+# -------------------------------------------------------------------
+
+# Pick a representative SDF (from any fragment)
+REP_FRAG=$(find "$d" -type f -name "*.sdf" | head -n1)
+
+if [ -z "$REP_FRAG" ]; then
+    echo "No SDF file found in $DIR"
+    exit 1
+fi
+
+# Check V2000 line
+ATOM_LINE=$(sed -n '4p' "$REP_FRAG")
+
+if [[ "$ATOM_LINE" != *"V2000"* ]]; then
+    echo "Warning: V2000 not on line 4 — searching..."
+    V2000_LINE=$(grep -n "V2000" "$REP_FRAG" | head -n1 | cut -d: -f1)
+    if [[ -z "$V2000_LINE" ]]; then
+        echo "ERROR: No V2000 line found in SDF. Cannot proceed."
+        exit 1
+    else
+        echo "Found V2000 at line $V2000_LINE (non-standard position). Proceeding."
+    fi
+fi
+
+# Extract atom count from counts line
+ATOM_COUNT=$(awk 'NR==4 {print $1}' "$REP_FRAG")
+echo "Detected atom count: $ATOM_COUNT"
 
 # -------------------------------------------------------------------
 #   Collect TMPQCXMS subdirectories
@@ -28,7 +58,7 @@ for vz in "$DIR"/*/; do
 
     vz_name=$(basename "$vz")
 
-    # Check if already finished
+    # Skip already finished jobs
     if [ -f "$vz/qcxms.out" ] && grep -q "normal termination of QCxMS" "$vz/qcxms.out"; then
         echo "Skipping $vz_name (already finished successfully)"
         continue
@@ -73,7 +103,7 @@ cat <<EOF > "$slurm_script"
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=8000
-#SBATCH --time=12:00:00
+#SBATCH --time=20:00:00
 #SBATCH --array=0-$((ARRAY_SIZE - 1))
 
 set -x
@@ -81,6 +111,7 @@ export OMP_NUM_THREADS=1
 
 DIR="$DIR"
 PER_TASK=$PER_TASK
+ATOM_COUNT=$ATOM_COUNT
 
 # Directory list (embedded from parent script)
 dir_list=(
@@ -91,7 +122,7 @@ for item in "${dir_list[@]}"; do
     printf "\"%s\"\n" "$item" >> "$slurm_script"
 done
 
-# Finish the SLURM script
+# Finish the SLURM script with atom-count dependent QCxMS
 cat <<'EOF' >> "$slurm_script"
 )
 
@@ -113,9 +144,24 @@ for ((i=START_INDEX; i<=END_INDEX; i++)); do
     fi
 
     cd "$VZ_DIR" || continue
+    echo "Running QCxMS in $VZ_DIR (ATOM_COUNT=$ATOM_COUNT)"
 
-    echo "Running qcxms in $VZ_DIR"
-    qcxms --prod > qcxms.out 2>&1
+    # Inside each fragment folder (VZ_DIR) before running QCxMS:
+    echo "tmax 10" > qcxms.in
+    echo "iseed 10" >> qcxms.in
+    echo "method ei" >> qcxms.in
+    
+    if (( ATOM_COUNT > 34 )); then
+        # Large molecule — run UNITY
+        pqcxms --prod --unity  > qcxms.out 2>&1
+        echo "UNITY used (atom count $ATOM_COUNT > 34)"
+    else
+        # Small molecule — skip UNITY
+        pqcxms  --prod > qcxms.out 2>&1
+        echo "UNITY not used (atom count $ATOM_COUNT <= 34)"
+    fi
+
+
     touch ready
 done
 EOF
