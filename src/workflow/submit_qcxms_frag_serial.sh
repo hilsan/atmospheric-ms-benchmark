@@ -147,17 +147,17 @@ for ((i=START_INDEX; i<=END_INDEX; i++)); do
     echo "Running QCxMS in $VZ_DIR (ATOM_COUNT=$ATOM_COUNT)"
 
     # Inside each fragment folder (VZ_DIR) before running QCxMS:
-    echo "tmax 10" > qcxms.in
+    echo "tmax 1" > qcxms.in
     echo "iseed 10" >> qcxms.in
     echo "method ei" >> qcxms.in
     
     if (( ATOM_COUNT > 34 )); then
         # Large molecule — run UNITY
-        pqcxms --prod --unity  > qcxms.out 2>&1
+        qcxms --unity --prod > qcxms.out 2>&1
         echo "UNITY used (atom count $ATOM_COUNT > 34)"
     else
         # Small molecule — skip UNITY
-        pqcxms  --prod > qcxms.out 2>&1
+         qcxms  --prod > qcxms.out 2>&1
         echo "UNITY not used (atom count $ATOM_COUNT <= 34)"
     fi
 

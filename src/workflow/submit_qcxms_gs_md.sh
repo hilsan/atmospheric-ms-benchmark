@@ -62,12 +62,12 @@ cp ../xtbopt.sdf .
 # ------------------------------
 # Run QCxMS2
 # ------------------------------
-echo "tmax 25" > qcxms.in
+echo "tmax 1" > qcxms.in
 echo "iseed 10" >> qcxms.in
 
 
 qcxms -i xtbopt.sdf > qcxms.out 2>&1
-qcxms -i xtbopt.sdf  > qcxms.out 2>&1
+qcxms  -i xtbopt.sdf > qcxms.out 2>&1
 
 
 
