@@ -54,14 +54,23 @@ def main():
     args = parser.parse_args()
 
     df = pd.read_csv(args.input_csv)
-
-    if "Modified_SMILES" not in df.columns:
-        raise ValueError("Input CSV must contain 'Modified_SMILES' column.")
-
+    
+    # Determine which column to use
+    if "Modified_SMILES" in df.columns:
+        smiles_col = "Modified_SMILES"
+    elif "SMILES" in df.columns:
+        smiles_col = "SMILES"
+        print(
+            "[WARNING] 'Modified_SMILES' column not found. "
+            "Using 'SMILES' instead. Derivatized SMILES will not be analyzed."
+        )
+    else:
+        raise ValueError("Input CSV must contain either 'Modified_SMILES' or 'SMILES' column.")
+    
     ensure_dir(args.output_root)
-
+    
     for idx, row in df.iterrows():
-        smi = row["Modified_SMILES"]
+        smi = row[smiles_col]  
         mol_name = f"{idx:04d}"
         mol_dir = os.path.join(args.output_root, mol_name)
 

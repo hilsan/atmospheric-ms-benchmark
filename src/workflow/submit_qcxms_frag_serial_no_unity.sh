@@ -7,6 +7,31 @@
 d=$(pwd)
 bname=$(basename "$d")
 
+# -------------------------------------------------------------------
+#   HARD GATE: check GS run in $d finished normally
+# -------------------------------------------------------------------
+
+GS_OUT=$(find "$d" -maxdepth 1 -type f -name "*.out" | head -n1)
+
+if [ -z "$GS_OUT" ]; then
+    echo "ERROR: No ground-state output (*.out) found in $d"
+    echo "QCxMS will NOT be submitted."
+    exit 1
+fi
+
+if ! grep -q "normal termination of QCxMS" "$GS_OUT"; then
+    echo "ERROR: Ground-state run did not terminate normally."
+    echo "Output checked: $GS_OUT"
+    echo "QCxMS will NOT be submitted."
+    exit 1
+fi
+
+echo "Ground-state run completed successfully: $GS_OUT"
+
+# -------------------------------------------------------------------
+#   QCxMS directory checks
+# -------------------------------------------------------------------
+
 DIR="$d/TMPQCXMS"
 if [ ! -d "$DIR" ]; then 
     echo "Run mpspred first!"
@@ -14,14 +39,12 @@ if [ ! -d "$DIR" ]; then
 fi
 
 echo "Starting parallel QCxMS run on $DIR"
-
 cd "$DIR" || exit 1
 
 # -------------------------------------------------------------------
 #   Determine atom count (once per molecule)
 # -------------------------------------------------------------------
 
-# Pick a representative SDF (from any fragment)
 REP_FRAG=$(find "$d" -type f -name "*.sdf" | head -n1)
 
 if [ -z "$REP_FRAG" ]; then
@@ -29,7 +52,6 @@ if [ -z "$REP_FRAG" ]; then
     exit 1
 fi
 
-# Check V2000 line
 ATOM_LINE=$(sed -n '4p' "$REP_FRAG")
 
 if [[ "$ATOM_LINE" != *"V2000"* ]]; then
@@ -43,7 +65,6 @@ if [[ "$ATOM_LINE" != *"V2000"* ]]; then
     fi
 fi
 
-# Extract atom count from counts line
 ATOM_COUNT=$(awk 'NR==4 {print $1}' "$REP_FRAG")
 echo "Detected atom count: $ATOM_COUNT"
 
@@ -55,18 +76,14 @@ dir_list=()
 
 for vz in "$DIR"/*/; do
     [ -d "$vz" ] || continue
-
     vz_name=$(basename "$vz")
 
-    # Skip already finished jobs
     if [ -f "$vz/qcxms.out" ] && grep -q "normal termination of QCxMS" "$vz/qcxms.out"; then
         echo "Skipping $vz_name (already finished successfully)"
         continue
     fi
 
-    # Clean previous outputs without touching SLURM files
     rm -f "$vz"/*.err "$vz"/*.out "$vz"/*.log
-
     dir_list+=("$vz_name")
 done
 
@@ -74,7 +91,7 @@ TOTAL=${#dir_list[@]}
 echo "TOTAL = $TOTAL directories to process"
 
 if (( TOTAL == 0 )); then
-    echo "All directories finished, nothing to submit."
+    echo "All QCxMS runs already finished. Nothing to submit."
     exit 0
 fi
 
@@ -92,6 +109,7 @@ slurm_script="${bname}_multi.slurm"
 # -------------------------------------------------------------------
 #   Write the SLURM script
 # -------------------------------------------------------------------
+
 cat <<EOF > "$slurm_script"
 #!/bin/bash -l
 
@@ -113,23 +131,19 @@ DIR="$DIR"
 PER_TASK=$PER_TASK
 ATOM_COUNT=$ATOM_COUNT
 
-# Directory list (embedded from parent script)
 dir_list=(
 EOF
 
-# Append array contents safely
 for item in "${dir_list[@]}"; do
     printf "\"%s\"\n" "$item" >> "$slurm_script"
 done
 
-# Finish the SLURM script with atom-count dependent QCxMS
 cat <<'EOF' >> "$slurm_script"
 )
 
 START_INDEX=$(( SLURM_ARRAY_TASK_ID * PER_TASK ))
 END_INDEX=$(( START_INDEX + PER_TASK - 1 ))
 
-# Clamp END_INDEX to array size
 if (( END_INDEX >= ${#dir_list[@]} )); then
     END_INDEX=$(( ${#dir_list[@]} - 1 ))
 fi
@@ -138,30 +152,16 @@ for ((i=START_INDEX; i<=END_INDEX; i++)); do
     vz="${dir_list[i]}"
     VZ_DIR="$DIR/$vz"
 
-    if [ ! -d "$VZ_DIR" ]; then
-        echo "Directory $VZ_DIR not found, skipping"
-        continue
-    fi
-
+    [ -d "$VZ_DIR" ] || continue
     cd "$VZ_DIR" || continue
+
     echo "Running QCxMS in $VZ_DIR (ATOM_COUNT=$ATOM_COUNT)"
 
-    # Inside each fragment folder (VZ_DIR) before running QCxMS:
-    echo "tmax 1" > qcxms.in
+    echo "tmax 10" > qcxms.in
     echo "iseed 10" >> qcxms.in
     echo "method ei" >> qcxms.in
-    
-    if (( ATOM_COUNT > 34 )); then
-        # Large molecule — run UNITY
-        qcxms --unity --prod > qcxms.out 2>&1
-        echo "UNITY used (atom count $ATOM_COUNT > 34)"
-    else
-        # Small molecule — skip UNITY
-         qcxms  --prod > qcxms.out 2>&1
-        echo "UNITY not used (atom count $ATOM_COUNT <= 34)"
-    fi
 
-
+    qcxms --prod > qcxms.out 2>&1
     touch ready
 done
 EOF
@@ -169,5 +169,6 @@ EOF
 # -------------------------------------------------------------------
 #   Submit SLURM array job
 # -------------------------------------------------------------------
+
 sbatch "$slurm_script"
-echo "Submitted single array job of $ARRAY_SIZE tasks for $TOTAL directories"
+echo "Submitted array job of $ARRAY_SIZE tasks for $TOTAL directories"
