@@ -73,6 +73,7 @@ TABLE_MAP = [
     ("franklin/paper/table_strict_overlap_10pct.tex",          "tables/orig/table_strict_overlap_10pct.tex"),
     ("franklin/paper/table_strict_overlap_top20.tex",          "tables/orig/table_strict_overlap_top20.tex"),
     ("franklin/paper/diagnostics_coverage.tex",                "tables/orig/diagnostics_coverage.tex"),
+    ("franklin/paper/table_perclass_entropy.tex",              "tables/orig/table_perclass_entropy.tex"),
     # UCB / External dataset tables
     ("ucb_globes_tracers/paper/table_all.tex",                 "tables/tracers/table_all.tex"),
     ("ucb_globes_tracers/paper/table_combined.tex",            "tables/tracers/table_combined.tex"),
