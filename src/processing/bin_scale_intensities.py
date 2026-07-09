@@ -113,6 +113,36 @@ def bin_and_scale(df):
     return df.sort_values("mz").reset_index(drop=True)
 
 
+def derive_output_spectra(df):
+    """Split a binned+scaled spectrum into the three exported views.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Output of bin_and_scale() — columns mz, intensity.
+
+    Returns
+    -------
+    dict[str, pandas.DataFrame]
+        Keys "all", "10pct", "top20":
+        - "all": every peak, unchanged.
+        - "10pct": peaks with intensity >= 10% of the base peak.
+        - "top20": the 20 most intense peaks, re-sorted by m/z.
+    """
+    all_df = df.copy()
+
+    p10_df = df[df["intensity"] >= 0.1 * df["intensity"].max()].copy()
+
+    top20_df = (
+        df.sort_values("intensity", ascending=False)
+        .head(20)
+        .sort_values("mz")
+        .copy()
+    )
+
+    return {"all": all_df, "10pct": p10_df, "top20": top20_df}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Bin spectrum to integer m/z, scale intensities to 999, and export filtered spectra."
@@ -132,19 +162,8 @@ def main():
         print("Error: no peaks remaining after filtering.", file=sys.stderr)
         sys.exit(1)
 
-    # All peaks
-    all_df = df.copy()
-
-    # Top 10% of base peak intensity
-    p10_df = df[df["intensity"] >= 0.1 * df["intensity"].max()].copy()
-
-    # Top 20 most intense peaks, sorted by m/z
-    top20_df = (
-        df.sort_values("intensity", ascending=False)
-        .head(20)
-        .sort_values("mz")
-        .copy()
-    )
+    outputs = derive_output_spectra(df)
+    all_df, p10_df, top20_df = outputs["all"], outputs["10pct"], outputs["top20"]
 
     fmt = "%.4f"
     all_df.to_csv(f"{args.output}_all.csv",     index=False, header=False, float_format=fmt)
