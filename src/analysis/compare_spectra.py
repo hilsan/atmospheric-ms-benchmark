@@ -15,7 +15,11 @@ except ImportError:
 def read_spectrum(filepath, bin_width=1, basepeak=None):
     """Read mz,intensity CSV. Return dict {bin: intensity}.
 
-    bin_width : int, m/z bin size (1 = standard 1 Da rounding, 10 = 10 Da bins)
+    Input files are always already binned to integer m/z by
+    bin_and_scale() upstream, so no rounding is needed here for the
+    bin_width=1 case — just cast the already-whole-number m/z to int.
+
+    bin_width : int, m/z bin size (1 = input is already integer-binned, 10 = re-bin into 10 Da bins)
     basepeak  : if set, rescale so max intensity == basepeak before returning
     """
     if not os.path.isfile(filepath):
@@ -25,7 +29,7 @@ def read_spectrum(filepath, bin_width=1, basepeak=None):
         for line in f:
             try:
                 x, y = map(float, line.strip().split(','))
-                b = int(x // bin_width) * bin_width if bin_width > 1 else int(round(x))
+                b = int(x // bin_width) * bin_width if bin_width > 1 else int(x)
                 bins[b] = bins.get(b, 0.0) + y
             except:
                 continue
