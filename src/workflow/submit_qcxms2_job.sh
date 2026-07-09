@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=qcxms2_gfn2
 #SBATCH --account=project_2006752
-#SBATCH --partition=large
+#SBATCH --partition=longrun
 #SBATCH --output=qcxms2_%j.out
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
-#SBATCH --time=30:00:00
+#SBATCH --time=4-00:00:00
 #SBATCH --gres=nvme:100
 #SBATCH --mail-type=END,FAIL,TIME_LIMIT
 #SBATCH --mail-user=hildaagnesolivia@gmail.com
