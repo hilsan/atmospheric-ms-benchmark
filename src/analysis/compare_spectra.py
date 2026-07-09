@@ -49,7 +49,7 @@ def cosine_similarity(spec1, spec2):
     return 1000 * dot / norm if norm != 0 else np.nan
 
 
-def weighted_dot(spec1, spec2, m_exp=0.6, i_exp=3.0):
+def weighted_dot(spec1, spec2, m_exp=3.0, i_exp=0.6):
     """
     Weighted dot-product similarity (Stein & Scott style).
 
@@ -58,8 +58,8 @@ def weighted_dot(spec1, spec2, m_exp=0.6, i_exp=3.0):
 
     Parameters:
         spec1, spec2 : dict {mz: intensity}
-        m_exp        : float, exponent for m/z (default 0.6)
-        i_exp        : float, exponent for intensity (default 3.0)
+        m_exp        : float, exponent for m/z (default 3.0)
+        i_exp        : float, exponent for intensity (default 0.6)
 
     Returns:
         float : weighted dot similarity (0-1000 scale)
