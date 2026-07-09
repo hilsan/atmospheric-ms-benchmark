@@ -1,230 +1,223 @@
-import argparse
-import numpy as np
+#!/usr/bin/env python3
 import os
+import argparse
 import pandas as pd
-from collections import defaultdict
+import numpy as np
 
-def calculate_cosine_similarity(simulated_intensity, reference_intensity):
-    sim = np.array(simulated_intensity)
-    ref = np.array(reference_intensity)
-    dot = np.dot(sim, ref)
-    norm_sim = np.linalg.norm(sim)
-    norm_ref = np.linalg.norm(ref)
-    if norm_sim == 0 or norm_ref == 0:
-        return 0.0
-    return dot / (norm_sim * norm_ref) * 1000
+try:
+    import ms_entropy as _ms_entropy
+    _HAS_MS_ENTROPY = True
+except ImportError:
+    _HAS_MS_ENTROPY = False
 
-def calculate_weighted_cosine_similarity(sim_mz, sim_int, ref_mz, ref_int):
-    weighted_sim = np.array(sim_int) * np.array(sim_mz)
-    weighted_ref = np.array(ref_int) * np.array(ref_mz)
-    dot = np.dot(weighted_sim, weighted_ref)
-    norm_sim = np.linalg.norm(weighted_sim)
-    norm_ref = np.linalg.norm(weighted_ref)
-    if norm_sim == 0 or norm_ref == 0:
-        return 0.0
-    return dot / (norm_sim * norm_ref) * 1000
+# ----------------- Spectra reading & similarity functions -----------------
 
-def calculate_tanimoto_similarity(simulated_intensity, reference_intensity):
-    sim = np.array(simulated_intensity)
-    ref = np.array(reference_intensity)
-    intersection = np.sum(sim * ref)
-    union = np.sum(sim**2) + np.sum(ref**2) - intersection
-    if union == 0:
-        return 0.0
-    return intersection / union * 1000
+def read_spectrum(filepath, bin_width=1, basepeak=None):
+    """Read mz,intensity CSV. Return dict {bin: intensity}.
 
-def bin_and_normalize(mz_values, intensities, threshold=1.0, top_n=None):
-    binned = defaultdict(float)
-    for mz, intensity in zip(mz_values, intensities):
-        binned[round(mz)] += intensity  # Bin to nearest integer
-
-    if not binned:
-        return [], []
-
-    max_int = max(binned.values())
-    norm_binned = {mz: intensity / max_int * 999 for mz, intensity in binned.items()}
-    norm_binned = {mz: intensity for mz, intensity in norm_binned.items() if intensity >= threshold}
-
-    if top_n and top_n > 0:
-        norm_binned = dict(sorted(norm_binned.items(), key=lambda x: -x[1])[:top_n])
-
-    if not norm_binned:
-        return [], []
-
-    sorted_mz = sorted(norm_binned)
-    sorted_int = [norm_binned[mz] for mz in sorted_mz]
-
-    return sorted_mz, sorted_int
-
-
-def parse_spectrum(filepath, threshold, top_n):
-    ext = os.path.splitext(filepath)[1].lower()
-    mz, intensity = [], []
+    bin_width : int, m/z bin size (1 = standard 1 Da rounding, 10 = 10 Da bins)
+    basepeak  : if set, rescale so max intensity == basepeak before returning
+    """
+    if not os.path.isfile(filepath):
+        return None
+    bins = {}
     with open(filepath, 'r') as f:
         for line in f:
             try:
-                if ext == '.csv':
-                    x, y = map(float, line.strip().split(','))
-                else:
-                    x, y = map(float, line.strip().split())
-                mz.append(x)
-                intensity.append(y)
+                x, y = map(float, line.strip().split(','))
+                b = int(x // bin_width) * bin_width if bin_width > 1 else int(round(x))
+                bins[b] = bins.get(b, 0.0) + y
             except:
                 continue
-    return bin_and_normalize(mz, intensity, threshold, top_n)
+    if not bins:
+        return None
+    if basepeak is not None:
+        max_i = max(bins.values())
+        if max_i > 0:
+            bins = {k: v * basepeak / max_i for k, v in bins.items()}
+    return bins
 
-def similarity_scores(spec1, spec2):
+
+def cosine_similarity(spec1, spec2):
     if spec1 is None or spec2 is None:
-        return {
-            "Cosine": np.nan,
-            "Weighted_Cosine": np.nan,
-            "Tanimoto": np.nan
-        }
+        return np.nan
+    all_mz = sorted(set(spec1.keys()) | set(spec2.keys()))
+    vec1 = np.array([spec1.get(mz, 0.0) for mz in all_mz])
+    vec2 = np.array([spec2.get(mz, 0.0) for mz in all_mz])
+    dot = np.dot(vec1, vec2)
+    norm = np.linalg.norm(vec1) * np.linalg.norm(vec2)
+    return 1000 * dot / norm if norm != 0 else np.nan
 
-    mz1, int1 = spec1
-    mz2, int2 = spec2
-    common_mz = sorted(set(mz1) | set(mz2))
-    int1_aligned = [int1[mz1.index(mz)] if mz in mz1 else 0 for mz in common_mz]
-    int2_aligned = [int2[mz2.index(mz)] if mz in mz2 else 0 for mz in common_mz]
-    return {
-        "Cosine": calculate_cosine_similarity(int1_aligned, int2_aligned),
-        "Weighted_Cosine": calculate_weighted_cosine_similarity(common_mz, int1_aligned, common_mz, int2_aligned),
-        "Tanimoto": calculate_tanimoto_similarity(int1_aligned, int2_aligned)
-    }
 
-def count_peaks(spectrum):
-    return len(spectrum[0]) if spectrum else 0
-
-def simulated_peaks_in_reference(reference, simulated):
+def weighted_dot(spec1, spec2, m_exp=0.6, i_exp=3.0):
     """
-    Compute percentage of simulated peaks present in reference peaks.
-    Both inputs are (mz, intensities) tuples after binning/thresholding.
+    Weighted dot-product similarity (Stein & Scott style).
+
+    Dot product is computed over matched peaks only.
+    Norms are computed over each spectrum's full peak list independently.
+
+    Parameters:
+        spec1, spec2 : dict {mz: intensity}
+        m_exp        : float, exponent for m/z (default 0.6)
+        i_exp        : float, exponent for intensity (default 3.0)
+
+    Returns:
+        float : weighted dot similarity (0-1000 scale)
     """
-    if reference is None or simulated is None:
+    if spec1 is None or spec2 is None:
         return np.nan
 
-    ref_mz, _ = reference
-    sim_mz, _ = simulated
-
-    if not sim_mz:
+    matched_mz = set(spec1.keys()) & set(spec2.keys())
+    if not matched_mz:
         return np.nan
 
-    overlap = len(set(sim_mz) & set(ref_mz))
-    return (overlap / len(sim_mz)) * 100.0
+    dot = sum(
+        (spec1[mz] * spec2[mz]) ** i_exp * (mz ** 2) ** m_exp
+        for mz in matched_mz
+    )
+    norm1 = sum((spec1[mz] ** i_exp * mz ** m_exp) ** 2 for mz in spec1)
+    norm2 = sum((spec2[mz] ** i_exp * mz ** m_exp) ** 2 for mz in spec2)
+
+    norm = (norm1 * norm2) ** 0.5
+    return 1000 * dot / norm if norm != 0 else np.nan
 
 
-def peak_overlap_percentage(reference, simulated):
-    """
-    Compute percentage of reference peaks present in simulated peaks.
-    Both inputs are (mz, intensities) tuples after binning/thresholding.
-    """
-    if reference is None or simulated is None:
+def tanimoto_index(spec1, spec2):
+    if spec1 is None or spec2 is None:
         return np.nan
+    all_mz = sorted(set(spec1.keys()) | set(spec2.keys()))
+    bin1 = np.array([1 if spec1.get(mz, 0.0) > 0 else 0 for mz in all_mz])
+    bin2 = np.array([1 if spec2.get(mz, 0.0) > 0 else 0 for mz in all_mz])
+    inter = np.sum(bin1 * bin2)
+    union = np.sum(bin1) + np.sum(bin2) - inter
+    return inter / union if union != 0 else np.nan
 
-    ref_mz, _ = reference
-    sim_mz, _ = simulated
 
-    if not ref_mz:
+def fraction_sim_in_ref(spec_ref, spec_sim):
+    if spec_ref is None or spec_sim is None:
         return np.nan
+    ref_peaks = set(spec_ref.keys())
+    sim_peaks = set(spec_sim.keys())
+    if not sim_peaks:
+        return np.nan
+    return 100 * len(sim_peaks & ref_peaks) / len(sim_peaks)
 
-    ref_set = set(ref_mz)
-    sim_set = set(sim_mz)
 
-    overlap = len(ref_set & sim_set)  # intersection
-    return (overlap / len(ref_set)) * 100.0
+def fraction_ref_in_sim(spec_ref, spec_sim):
+    if spec_ref is None or spec_sim is None:
+        return np.nan
+    ref_peaks = set(spec_ref.keys())
+    sim_peaks = set(spec_sim.keys())
+    if not ref_peaks:
+        return np.nan
+    return 100 * len(ref_peaks & sim_peaks) / len(ref_peaks)
 
+
+def entropy_similarity(spec_ref, spec_sim):
+    """MS entropy similarity (0–1 scale). Requires ms_entropy package."""
+    if not _HAS_MS_ENTROPY or spec_ref is None or spec_sim is None:
+        return np.nan
+    arr_ref = np.array([[mz, i] for mz, i in spec_ref.items()], dtype=np.float32)
+    arr_sim = np.array([[mz, i] for mz, i in spec_sim.items()], dtype=np.float32)
+    if len(arr_ref) == 0 or len(arr_sim) == 0:
+        return np.nan
+    return float(_ms_entropy.calculate_entropy_similarity(
+        arr_ref, arr_sim, ms2_tolerance_in_da=0.05, clean_spectra=True
+    ))
+
+
+# ----------------- Main script -----------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare mass spectra.")
-    parser.add_argument("--simulated", required=True, nargs='+', help="Paths to simulated spectrum files")
-    parser.add_argument("--reference", required=True, help="Path to the reference spectrum file")
-    parser.add_argument("--output", required=True, help="Prefix for output files (CSV)")
-    parser.add_argument("--threshold", type=float, default=1.0, help="Minimum normalized intensity threshold (default=1.0)")
-    parser.add_argument("--top_n_peaks", type=int, default=0, help="Keep only the top N most intense peaks (default=20). Set to 0 to keep all peaks.")
+    parser = argparse.ArgumentParser(description="Compare spectra for multiple methods and molecules.")
+    parser.add_argument("--base_dir", required=True, help="Base dataset directory")
+    parser.add_argument("--include_all_peaks", action="store_true", help="Include all peaks spectra")
+    parser.add_argument("--include_top20", action="store_true", help="Include top 20 peaks spectra")
+    parser.add_argument("--include_top10", action="store_true", help="Include top 10 percent peaks spectra")
+    parser.add_argument("--methods", nargs="+", default=None, help="List of methods to include (optional)")
+    parser.add_argument("--bin_width", type=int, default=1, help="m/z bin width in Da (default 1; use 10 for sensitivity check)")
+    parser.add_argument("--basepeak", type=float, default=None, help="Rescale spectra to this basepeak intensity before comparing (e.g. 999)")
     args = parser.parse_args()
 
-    # ---------------- Load spectra ----------------
-    spectra = {}
+    base_dir = os.path.abspath(args.base_dir)
+    _suffix = f"_bin{args.bin_width}bp{int(args.basepeak)}" if (args.bin_width != 1 or args.basepeak is not None) else ""
+    results_base = os.path.join(base_dir, f"results{_suffix}")
+    os.makedirs(results_base, exist_ok=True)
 
-    # Reference spectrum
-    if os.path.isfile(args.reference):
-        reference_spectrum = parse_spectrum(args.reference, args.threshold, args.top_n_peaks)
-    else:
-        print(f"Warning: Reference file '{args.reference}' not found. Using empty spectrum.")
-        reference_spectrum = None
-    spectra["reference"] = reference_spectrum
+    # Peak types to process
+    peak_flags = []
+    if args.include_all_peaks:
+        peak_flags.append("all")
+    if args.include_top20:
+        peak_flags.append("top20")
+    if args.include_top10:
+        peak_flags.append("10pct")
+    if not peak_flags:
+        peak_flags = ["all", "top20", "10pct"]
 
-    # Simulated spectra
-    for f in args.simulated:
-        base_name = os.path.basename(f)
-        if os.path.isfile(f):
-            spectra[base_name] = parse_spectrum(f, args.threshold, args.top_n_peaks)
-        else:
-            print(f"Warning: Simulated file '{f}' not found. Will use NaN for similarities.")
-            spectra[base_name] = None
+    # Detect methods
+    methods = args.methods or [
+        d for d in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, d))
+        and d not in ["EXP"]
+        and not d.startswith("results")
+    ]
 
-    names = list(spectra.keys())
+    # Detect molecules from EXP
+    exp_dir = os.path.join(base_dir, "EXP")
+    molecules = sorted(
+        d for d in os.listdir(exp_dir)
+        if os.path.isdir(os.path.join(exp_dir, d)) and d.isdigit()
+    )
 
-    # ---------------- Similarity matrices ----------------
-    cosine_matrix = pd.DataFrame(index=names, columns=names, dtype=float)
-    weighted_cosine_matrix = pd.DataFrame(index=names, columns=names, dtype=float)
-    tanimoto_matrix = pd.DataFrame(index=names, columns=names, dtype=float)
+    for mol in molecules:
+        mol_results_dir = os.path.join(results_base, mol)
+        os.makedirs(mol_results_dir, exist_ok=True)
 
-    for i, name1 in enumerate(names):
-        for j, name2 in enumerate(names):
-            scores = similarity_scores(spectra[name1], spectra[name2])
-            cosine_matrix.loc[name1, name2] = scores["Cosine"]
-            weighted_cosine_matrix.loc[name1, name2] = scores["Weighted_Cosine"]
-            tanimoto_matrix.loc[name1, name2] = scores["Tanimoto"]
-
-    # Save similarity matrices
-    cosine_matrix.to_csv(f"{args.output}_cosine_thresh{int(args.threshold)}.csv")
-    weighted_cosine_matrix.to_csv(f"{args.output}_weighted_cosine_thresh{int(args.threshold)}.csv")
-    tanimoto_matrix.to_csv(f"{args.output}_tanimoto_thresh{int(args.threshold)}.csv")
-
-    # ---------------- Peak counts ----------------
-    peak_counts = {name: count_peaks(spectra[name]) for name in spectra}
-    peak_df = pd.DataFrame.from_dict(peak_counts, orient='index', columns=['Peak_Count'])
-    peak_df.to_csv(f"{args.output}_peak_counts_thresh{int(args.threshold)}.csv")
-
-    # ---------------- Peak differences vs reference ----------------
-    if "reference" in peak_counts:
-        ref_peaks = peak_counts["reference"]
-        diffs = {
-            name: count - ref_peaks
-            for name, count in peak_counts.items()
-            if name != "reference"
-        }
-        diff_df = pd.DataFrame.from_dict(diffs, orient='index', columns=['Peak_Diff_vs_Reference'])
-        diff_df['Reference_Peaks'] = ref_peaks
-        diff_df['Simulated_Peaks'] = peak_df.loc[diff_df.index, 'Peak_Count']
-        diff_df['Threshold'] = args.threshold
-        diff_df.to_csv(f"{args.output}_peak_differences_thresh{int(args.threshold)}.csv")
-
-        # ---------------- Peak overlap percentages ----------------
-        # Fraction of reference peaks present in simulated spectrum
-        pct_ref_overlap = {
-            name: peak_overlap_percentage(reference_spectrum, spectra[name])
-            for name in spectra if name != "reference"
+        ref_dir = os.path.join(exp_dir, mol, "spectra")
+        ref_spectra = {
+            "all":   read_spectrum(os.path.join(ref_dir, "spectra_all.csv"),   args.bin_width, args.basepeak),
+            "top20": read_spectrum(os.path.join(ref_dir, "spectra_top20.csv"), args.bin_width, args.basepeak),
+            "10pct": read_spectrum(os.path.join(ref_dir, "spectra_10pct.csv"), args.bin_width, args.basepeak),
         }
 
-        # Fraction of simulated peaks present in reference spectrum (reverse)
-        pct_sim_in_ref = {
-            name: simulated_peaks_in_reference(reference_spectrum, spectra[name])
-            for name in spectra if name != "reference"
-        }
+        for pt in peak_flags:
+            rows = []
+            for method in methods:
+                sim_file = os.path.join(base_dir, method, mol, "spectra", f"spectra_{pt}.csv")
+                print(f"[{mol}/{pt}] REF={os.path.join(ref_dir, f'spectra_{pt}.csv')}  SIM={sim_file}")
+                spec_sim = read_spectrum(sim_file, args.bin_width, args.basepeak)
 
-        overlap_df = pd.DataFrame({
-            'Pct_Ref_Peaks_Recovered': pct_ref_overlap,
-            'Pct_Sim_Peaks_in_Exp': pct_sim_in_ref
-        })
-        overlap_df['Reference_Peaks'] = ref_peaks
-        overlap_df['Threshold'] = args.threshold
+                row = {
+                    "Method":            method,
+                    "Cosine":            cosine_similarity(ref_spectra[pt], spec_sim),
+                    "Weighted_Dot":      weighted_dot(ref_spectra[pt], spec_sim),
+                    "Tanimoto":          tanimoto_index(ref_spectra[pt], spec_sim),
+                    "%S_sim_in_ref":     fraction_sim_in_ref(ref_spectra[pt], spec_sim),
+                    "%R_ref_in_sim":     fraction_ref_in_sim(ref_spectra[pt], spec_sim),
+                    "Entropy_Similarity": entropy_similarity(ref_spectra[pt], spec_sim),
+                }
+                rows.append(row)
 
-        overlap_df[['Pct_Ref_Peaks_Recovered']].to_csv(f"{args.output}_pct_ref_peaks.csv")
-        overlap_df[['Pct_Sim_Peaks_in_Exp']].to_csv(f"{args.output}_pct_sim_in_ref.csv")
+            output_file = os.path.join(mol_results_dir, f"spectra_{pt}_comparison{_suffix}.csv")
+            df_new = pd.DataFrame(rows)
+
+            # Carry over existing Entropy_Similarity values rather than overwriting with NaN.
+            # ms_entropy requires Python 3.8+; run patch_entropy.py to compute fresh values.
+            if os.path.isfile(output_file):
+                try:
+                    df_old = pd.read_csv(output_file)
+                    if "Entropy_Similarity" in df_old.columns:
+                        old_entropy = df_old.set_index("Method")["Entropy_Similarity"]
+                        df_new["Entropy_Similarity"] = df_new["Method"].map(old_entropy)
+                        print(f"[{mol}] {pt} — kept existing Entropy_Similarity values "
+                              f"(run patch_entropy.py to recompute)")
+                except Exception:
+                    pass
+
+            df_new.to_csv(output_file, index=False)
+            print(f"[{mol}] {pt} results written -> {output_file}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

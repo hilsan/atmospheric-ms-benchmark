@@ -121,7 +121,7 @@ cat <<EOF > "$slurm_script"
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=8000
-#SBATCH --time=20:00:00
+#SBATCH --time=72:00:00
 #SBATCH --array=0-$((ARRAY_SIZE - 1))
 
 set -x

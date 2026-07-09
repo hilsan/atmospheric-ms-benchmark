@@ -26,7 +26,7 @@ def run_command(cmd, verbose=True):
     """Run a shell command and optionally print output."""
     if verbose:
         print(f"Running: {cmd}")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     if result.returncode != 0:
         print(f"⚠ Command failed: {cmd}")
         print(result.stderr)

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import os
 import sys
+
+# Ensure aprl_ssp internal imports resolve when called from any working directory
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'aprl_ssp'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import pandas as pd
 from argparse import ArgumentParser, RawTextHelpFormatter
 from openbabel.pybel import readstring

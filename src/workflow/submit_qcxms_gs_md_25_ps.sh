@@ -36,13 +36,48 @@ cd $DIR_NAME
 mkdir -p GS-opt
 cd GS-opt
 
-cp ../structure.sdf input.sdf
+if [ -d "MS-run/TMPQCXMS" ]; then
+    echo "TMPQCXMS already exists — GS-MD already done. Skipping to protect in-progress fragmentation."
+    exit 0
+fi
 
-xtb input.sdf --opt extreme > opt.out
+# Check for previous getieeab failure with Poisson IEE — retry with Gaussian if detected
+if [ -f "MS-run/qcxms.out" ] && grep -q "internal error inside getieeab" "MS-run/qcxms.out"; then
+    if ! grep -q "^gauss" "MS-run/qcxms.in" 2>/dev/null; then
+        echo "Detected getieeab error with Poisson IEE — retrying with Gaussian IEE distribution."
+        cd MS-run
+        find . -mindepth 1 -not -name "xtbopt.sdf" -delete
+        cat > qcxms.in << EOF
+tmax 25
+iseed 10
+method ei
+gauss
+EOF
+        qcxms -i xtbopt.sdf > qcxms.out 2>&1
+        qcxms -i xtbopt.sdf > qcxms.out 2>&1
+        exit $?
+    fi
+fi
 
-if [[ ! -f xtbopt.sdf ]]; then
-    echo "ERROR: xtbopt.sdf not created!"
-    exit 1
+# Gaussian run completed normally but TMPQCXMS missing — retry
+if [ -f "MS-run/qcxms.in" ] && grep -q "^gauss" "MS-run/qcxms.in" 2>/dev/null; then
+    if [ -f "MS-run/qcxms.out" ] && grep -q "normal termination" "MS-run/qcxms.out" && ! grep -q "internal error inside getieeab" "MS-run/qcxms.out"; then
+        echo "Gaussian run completed but TMPQCXMS missing — rerunning both QCxMS passes."
+        cd MS-run
+        find . -mindepth 1 -not -name "xtbopt.sdf" -not -name "qcxms.in" -delete
+        qcxms -i xtbopt.sdf > qcxms.out 2>&1
+        qcxms -i xtbopt.sdf > qcxms.out 2>&1
+        exit $?
+    fi
+fi
+
+if [ ! -f "xtbopt.sdf" ]; then
+    cp ../structure.sdf input.sdf
+    xtb input.sdf --opt extreme > opt.out
+    if [[ ! -f xtbopt.sdf ]]; then
+        echo "ERROR: xtbopt.sdf not created!"
+        exit 1
+    fi
 fi
 
 mkdir -p MS-run
@@ -57,3 +92,4 @@ method ei
 EOF
 
 qcxms -i xtbopt.sdf > qcxms.out 2>&1
+qcxms  -i xtbopt.sdf > qcxms.out 2>&1
