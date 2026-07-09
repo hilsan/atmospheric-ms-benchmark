@@ -28,11 +28,13 @@ import math
 import pytest
 
 from src.analysis.compare_spectra import (
+    bin_pairs,
     cosine_similarity,
     fraction_ref_in_sim,
     fraction_sim_in_ref,
     entropy_similarity,
     read_spectrum,
+    rescale_to_basepeak,
     tanimoto_index,
     weighted_dot,
 )
@@ -157,3 +159,67 @@ class TestReadSpectrum:
         result = read_spectrum(str(f))
 
         assert result == {10: 100.0, 20: 50.0}
+
+
+class TestBinPairs:
+    def test_bin_width_1_uses_mz_as_is(self):
+        pairs = [(10.0, 100.0), (20.0, 50.0)]
+
+        assert bin_pairs(pairs, bin_width=1) == {10.0: 100.0, 20.0: 50.0}
+
+    def test_rebinning_merges_and_sums_colliding_peaks(self):
+        # 41, 42, 49 all floor-divide into the 40-49 bucket; 51 goes to 50-59.
+        pairs = [(41.0, 100.0), (42.0, 50.0), (49.0, 30.0), (51.0, 20.0)]
+
+        result = bin_pairs(pairs, bin_width=10)
+
+        assert result == {40: 180.0, 50: 20.0}
+
+    def test_rebinning_is_floor_based_not_nearest(self):
+        # 49 is much closer to 50 than 40, but floor-division still buckets
+        # it with 40-49, not the nearest bin boundary — this is a genuinely
+        # different rule from bin_and_scale()'s round-half-up, by design.
+        pairs = [(49.0, 100.0)]
+
+        assert bin_pairs(pairs, bin_width=10) == {40: 100.0}
+
+
+class TestRescaleToBasepeak:
+    def test_rescales_so_max_equals_basepeak(self):
+        bins = {10: 50.0, 20: 100.0}
+
+        result = rescale_to_basepeak(bins, 999)
+
+        assert result[20] == pytest.approx(999.0)
+        assert result[10] == pytest.approx(499.5)
+
+    def test_zero_max_returns_bins_unchanged(self):
+        bins = {10: 0.0, 20: 0.0}
+
+        assert rescale_to_basepeak(bins, 999) == bins
+
+
+class TestRebinThenRescale:
+    """The pattern read_spectrum() should always use together when
+    bin_width > 1 — rebinning alone leaves peak heights inconsistent
+    with the original basepeak convention (see bin_pairs()'s docstring)."""
+
+    def test_rebinned_and_rescaled_result_has_correct_relative_heights(self):
+        pairs = [(41.0, 100.0), (42.0, 50.0), (49.0, 30.0), (51.0, 20.0)]
+
+        rebinned = bin_pairs(pairs, bin_width=10)
+        result = rescale_to_basepeak(rebinned, 999)
+
+        # Merged bin (180) is now the base peak, scaled to exactly 999;
+        # the other bin (20) scales proportionally: 20 * 999/180.
+        assert result[40] == pytest.approx(999.0)
+        assert result[50] == pytest.approx(20 * 999 / 180)
+
+    def test_read_spectrum_applies_both_together(self, tmp_path):
+        f = tmp_path / "spectra_all.csv"
+        f.write_text("41,100.0000\n42,50.0000\n49,30.0000\n51,20.0000\n")
+
+        result = read_spectrum(str(f), bin_width=10, basepeak=999)
+
+        assert result[40] == pytest.approx(999.0)
+        assert result[50] == pytest.approx(20 * 999 / 180)

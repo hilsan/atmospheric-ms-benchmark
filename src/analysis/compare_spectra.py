@@ -12,33 +12,58 @@ except ImportError:
 
 # ----------------- Spectra reading & similarity functions -----------------
 
+def bin_pairs(pairs, bin_width=1):
+    """Group (mz, intensity) pairs into bins, summing collisions.
+
+    Input pairs are always already binned to integer-valued m/z by
+    bin_and_scale() upstream, so for bin_width=1 the m/z is used as-is
+    (no cast needed — it's already a whole number). For bin_width>1
+    this performs a genuine re-binning into wider buckets via floor
+    division, which can merge multiple original peaks into one bin.
+
+    NOTE: re-binning changes relative peak heights (merged peaks sum
+    their intensities), so the resulting bins are generally no longer
+    consistent with whatever basepeak scale the input was in — pass a
+    basepeak to rescale_to_basepeak() afterwards when bin_width > 1,
+    or the "base peak" convention silently breaks.
+    """
+    bins = {}
+    for x, y in pairs:
+        b = int(x // bin_width) * bin_width if bin_width > 1 else x
+        bins[b] = bins.get(b, 0.0) + y
+    return bins
+
+
+def rescale_to_basepeak(bins, basepeak):
+    """Rescale a {bin: intensity} dict so its max value equals basepeak."""
+    max_i = max(bins.values())
+    if max_i > 0:
+        return {k: v * basepeak / max_i for k, v in bins.items()}
+    return dict(bins)
+
+
 def read_spectrum(filepath, bin_width=1, basepeak=None):
     """Read mz,intensity CSV. Return dict {bin: intensity}.
 
-    Input files are always already binned to integer-valued m/z by
-    bin_and_scale() upstream, so for bin_width=1 the parsed m/z is used
-    as-is (no cast needed — it's already a whole number).
-
     bin_width : int, m/z bin size (1 = input is already integer-binned, 10 = re-bin into 10 Da bins)
-    basepeak  : if set, rescale so max intensity == basepeak before returning
+    basepeak  : if set, rescale so max intensity == basepeak before returning.
+                Should always be set when bin_width > 1 — see bin_pairs().
     """
     if not os.path.isfile(filepath):
         return None
-    bins = {}
+    pairs = []
     with open(filepath, 'r') as f:
         for line in f:
             try:
                 x, y = map(float, line.strip().split(','))
-                b = int(x // bin_width) * bin_width if bin_width > 1 else x
-                bins[b] = bins.get(b, 0.0) + y
+                pairs.append((x, y))
             except:
                 continue
-    if not bins:
+    if not pairs:
         return None
+    bins = bin_pairs(pairs, bin_width)
     if basepeak is not None:
-        max_i = max(bins.values())
-        if max_i > 0:
-            bins = {k: v * basepeak / max_i for k, v in bins.items()}
+        bins = rescale_to_basepeak(bins, basepeak)
     return bins
 
 
