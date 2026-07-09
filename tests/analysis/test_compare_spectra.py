@@ -223,3 +223,30 @@ class TestRebinThenRescale:
 
         assert result[40] == pytest.approx(999.0)
         assert result[50] == pytest.approx(20 * 999 / 180)
+
+    def test_read_spectrum_defaults_to_999_when_rebinning_without_basepeak(self, tmp_path, capsys):
+        f = tmp_path / "spectra_all.csv"
+        f.write_text("41,100.0000\n42,50.0000\n49,30.0000\n51,20.0000\n")
+
+        result = read_spectrum(str(f), bin_width=10, basepeak=None)
+
+        assert result[40] == pytest.approx(999.0)
+        assert result[50] == pytest.approx(20 * 999 / 180)
+        assert "assuming" in capsys.readouterr().out.lower()
+
+    def test_explicit_basepeak_overrides_the_default(self, tmp_path):
+        f = tmp_path / "spectra_all.csv"
+        f.write_text("41,100.0000\n42,50.0000\n")
+
+        result = read_spectrum(str(f), bin_width=10, basepeak=500)
+
+        assert result[40] == pytest.approx(500.0)
+
+    def test_default_usage_bin_width_1_still_works_without_basepeak(self, tmp_path):
+        # The common case (no re-binning) must remain unaffected — no
+        # default-basepeak notice, no rescaling, since the input is
+        # already at the right scale.
+        f = tmp_path / "spectra_all.csv"
+        f.write_text("41,100.0000\n")
+
+        assert read_spectrum(str(f)) == {41.0: 100.0}

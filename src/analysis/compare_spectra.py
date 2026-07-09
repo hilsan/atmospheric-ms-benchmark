@@ -42,13 +42,26 @@ def rescale_to_basepeak(bins, basepeak):
     return dict(bins)
 
 
+DEFAULT_BASEPEAK = 999  # the pipeline-wide base-peak convention (bin_and_scale() always scales to this)
+
+
 def read_spectrum(filepath, bin_width=1, basepeak=None):
     """Read mz,intensity CSV. Return dict {bin: intensity}.
 
     bin_width : int, m/z bin size (1 = input is already integer-binned, 10 = re-bin into 10 Da bins)
     basepeak  : if set, rescale so max intensity == basepeak before returning.
-                Should always be set when bin_width > 1 — see bin_pairs().
+                When bin_width > 1 and basepeak isn't given, defaults to
+                DEFAULT_BASEPEAK (999) and prints a notice — re-binning
+                merges peaks and changes relative heights, so skipping
+                rescaling entirely would make the result meaningless.
     """
+    if bin_width > 1 and basepeak is None:
+        basepeak = DEFAULT_BASEPEAK
+        print(
+            f"[read_spectrum] bin_width={bin_width} with no basepeak given — "
+            f"assuming input spectrum has base peak intensity {DEFAULT_BASEPEAK} "
+            f"(the pipeline's standard convention) and rescaling to match."
+        )
     if not os.path.isfile(filepath):
         return None
     pairs = []
