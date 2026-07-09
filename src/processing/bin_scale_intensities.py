@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import numpy as np
 import pandas as pd
 import os
 import sys
@@ -92,8 +93,9 @@ def bin_and_scale(df):
     """
     df = df.copy()
 
-    # Integer bin m/z
-    df["mz"] = df["mz"].round().astype(int)
+    # Integer bin m/z — use floor(x+0.5) to get round-half-up instead of
+    # pandas' default banker's rounding (round-half-to-even).
+    df["mz"] = np.floor(df["mz"] + 0.5).astype(int)
 
     # Sum intensities for any colliding bins
     df = df.groupby("mz", as_index=False)["intensity"].sum()
