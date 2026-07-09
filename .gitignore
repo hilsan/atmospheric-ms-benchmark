@@ -1,22 +1,28 @@
-# Ignore all files in data and reports recursively
-/data/*
-/reports/*
+# Data and generated output (lives on Allas, not git)
+data/raw/
+data/processed/
+data/simulation_results/
+data/analysis_decision.txt
+reports/
 
-# But keep the folder structure (empty folders aren’t tracked by Git, so we’ll use .gitkeep)
-!data/.gitkeep
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!reports/.gitkeep
-!reports/figures/.gitkeep
-!reports/paper/.gitkeep
+# Notebook-adjacent generated artifacts
+notebook/plots/
+notebook/presentation_examples/
+notebook/results_plot.svg
+notebook/.ipynb_checkpoints/
 
-# Python / Jupyter typical ignores
+# SLURM job logs
+*.out
+*.err
+
+# Python
 __pycache__/
 *.pyc
-*.pyo
-*.ipynb_checkpoints
 
-# OS files
-.DS_Store
-Thumbs.db
-
+# Backups / scratch working files
+*.bak
+untitled.txt
+src/workflow/compress_tmpqcxms_list.txt
+src/workflow/compress_tmpqcxms_ucb_list.txt
+src/workflow/restrip_archives_list.txt
+src/workflow/restrip_large_list.txt
