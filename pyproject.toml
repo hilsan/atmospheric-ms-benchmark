@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atmospheric-ms-benchmark"
+version = "0.1.0"
+description = "Benchmarking simulated EI-MS methods (QCxMS, QCxMS2, CFM-ID, NEIMS) for atmospheric compound identification"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas==2.2.2",
+    "numpy==1.23.2",
+    "rdkit==2022.09.5",
+    "scipy==1.13.0",
+    "matplotlib==3.8.4",
+    "seaborn==0.13.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==7.1.3",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

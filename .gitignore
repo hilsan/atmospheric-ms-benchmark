@@ -18,6 +18,8 @@ notebook/.ipynb_checkpoints/
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
 
 # Backups / scratch working files
 *.bak
