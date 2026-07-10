@@ -82,6 +82,7 @@ TABLE_MAP = [
     ("ucb_globes_tracers/paper/table_10pct.tex",               "tables/tracers/table_10pct.tex"),
     ("ucb_globes_tracers/paper/table_top20.tex",               "tables/tracers/table_top20.tex"),
     ("ucb_globes_tracers/paper/table_strict_overlap_all.tex",  "tables/tracers/table_strict_overlap_all.tex"),
+    ("ucb_globes_tracers/paper/diagnostics_coverage.tex",     "tables/tracers/diagnostics_coverage.tex"),
     # SI compound tables
     ("paper/ucb_globes_tracers/si_compounds_ucb_globes_tracers.tex",
                                                                "tables/tracers/si_compounds_ucb_globes_tracers.tex"),
