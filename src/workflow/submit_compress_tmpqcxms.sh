@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
-#SBATCH --time=02:00:00
+#SBATCH --time=12:00:00
 
 LIST=/scratch/project_2006752/hsandstr/Project/atmospheric-ms-benchmark/src/workflow/compress_tmpqcxms_list.txt
 
@@ -26,9 +26,15 @@ if [ ! -d "$TARGET_DIR" ]; then
 fi
 
 if [ -f "$MSRUN/TMPQCXMS.tar.gz" ]; then
-    echo "Archive already exists, removing uncompressed dir: $TARGET_DIR"
-    rm -rf "$TARGET_DIR"
-    exit 0
+    echo "Archive exists — testing integrity: $MSRUN/TMPQCXMS.tar.gz"
+    if tar -tzf "$MSRUN/TMPQCXMS.tar.gz" > /dev/null 2>&1; then
+        echo "Archive OK — removing raw dir: $TARGET_DIR"
+        rm -rf "$TARGET_DIR"
+        exit 0
+    else
+        echo "Archive corrupt — removing and re-compressing"
+        rm -f "$MSRUN/TMPQCXMS.tar.gz"
+    fi
 fi
 
 echo "Compressing: $TARGET_DIR"

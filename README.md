@@ -268,6 +268,38 @@ The current workflow is entirely notebook-driven via sections 1–9 above.
 
 ---
 
+## TMPQCXMS compression status
+
+QCxMS trajectories are compressed to `TMPQCXMS.tar.gz` per molecule to save disk space.
+Compression is managed by `src/workflow/submit_compress_tmpqcxms.sh` with `compress_tmpqcxms_list.txt` as input.
+
+### Current state (as of 2026-07-10)
+
+| Dataset | Compressed (`.tar.gz` only) | Raw dir remaining | Notes |
+|---------|----------------------------|-------------------|-------|
+| `franklin` | 169 | 28 | Was never in the original list; 14 are dual-state (corrupt .tar.gz + raw dir) |
+| `franklin_tms` | 133 | 95 | Job 35378513 hit 2 h limit; 29 dual-state (corrupt .tar.gz + raw dir) |
+| `ucb_globes_tracers` | 12 | 14 | `QCxMS_25_ps` (all 13 mols) was never listed; 1 in `QCxMS_10_ps` also missed |
+
+**Dual-state** = both `TMPQCXMS/` directory and `TMPQCXMS.tar.gz` exist.
+These archives are **corrupt** (job hit time limit mid-tar).
+The updated script now verifies integrity with `tar -tzf` and removes a corrupt archive before re-compressing.
+
+### How to resubmit
+
+`compress_tmpqcxms_list.txt` now covers all 137 remaining raw dirs across all three datasets.
+The script time limit has been extended to 12 h.
+
+```bash
+cd /scratch/project_2006752/hsandstr/Project/atmospheric-ms-benchmark
+N=$(wc -l < src/workflow/compress_tmpqcxms_list.txt)
+sbatch --array=1-${N} src/workflow/submit_compress_tmpqcxms.sh
+```
+
+After the job completes, clean up `.err`/`.out` files at the project root.
+
+---
+
 ## Known archive issues (restrip job 35181425)
 
 During restripping of QCxMS2 auxiliary archives (removing orca.out/geo.out/g98.out to save disk),
