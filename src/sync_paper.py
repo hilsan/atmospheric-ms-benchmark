@@ -112,27 +112,56 @@ def sync_file(src: Path, dst: Path, dry_run: bool) -> str:
     return f"  {status}  {dst.relative_to(PAPER)}"
 
 
-def _load_strict_overlap(base_dir: Path, canonical: str = "QCxMS_10_ps") -> "pd.DataFrame":
-    """Load results CSVs, rename canonical QCxMS, restrict to strict-overlap molecules."""
+def _load_strict_overlap(
+    base_dir: Path,
+    canonical: str = "QCxMS_10_ps",
+    tms_mismatch_mols: list = None,
+    tms_mismatch_fallback: Path = None,
+) -> "pd.DataFrame":
+    """Load results CSVs, apply TMS mismatch substitution, restrict to strict-overlap molecules.
+
+    tms_mismatch_mols: molecule indices (e.g. ["0007","0026","0058"]) whose TMS results
+        are replaced with scores from tms_mismatch_fallback (underivatized Franklin run).
+    """
     import pandas as pd
-    import numpy as np
     all_qcxms = {"QCxMS_10_ps", "QCxMS_25_ps", "QCxMS_10_ps_iee03"}
-    dfs = []
-    for f in sorted((base_dir / "results").glob("*/*.csv")):
-        if f.parent.name.isdigit():
-            df = pd.read_csv(f)
-            df["Molecule"] = f.parent.name
-            df["Peak_Type"] = f.stem.split("_")[1]
-            dfs.append(df)
+
+    def _read_dir(rdir: Path):
+        dfs = []
+        for f in sorted(rdir.glob("*/*.csv")):
+            if f.parent.name.isdigit():
+                df = pd.read_csv(f)
+                df["Molecule"] = f.parent.name
+                df["Peak_Type"] = f.stem.split("_")[1]
+                dfs.append(df)
+        return dfs
+
+    dfs = _read_dir(base_dir / "results")
     if not dfs:
         return None
     data = pd.concat(dfs, ignore_index=True)
     data["Method"] = data["Method"].replace({canonical: "QCxMS"})
     data = data[~data["Method"].isin(all_qcxms - {canonical})]
+
+    # Apply TMS mismatch substitution: replace scores for mismatch mols with
+    # underivatized Franklin scores (same molecules, different derivatization).
+    if tms_mismatch_mols and tms_mismatch_fallback and tms_mismatch_fallback.exists():
+        fb_dfs = _read_dir(tms_mismatch_fallback / "results")
+        if fb_dfs:
+            fb = pd.concat(fb_dfs, ignore_index=True)
+            fb["Method"] = fb["Method"].replace({canonical: "QCxMS"})
+            fb = fb[~fb["Method"].isin(all_qcxms - {canonical})]
+            for mol in tms_mismatch_mols:
+                fb_mol = fb[fb["Molecule"] == mol]
+                if not fb_mol.empty:
+                    data = data[data["Molecule"] != mol]
+                    data = pd.concat([data, fb_mol], ignore_index=True)
+
     # Fill missing metric columns
     for col in ["Cosine", "Weighted_Dot", "Tanimoto", "%S_sim_in_ref", "%R_ref_in_sim", "Entropy_Similarity"]:
         if col not in data.columns:
             data[col] = float("nan")
+
     # Strict-overlap: molecules with results in all active methods
     methods = [m for m in ["QCxMS", "QCxMS2", "CFMID", "NEIMS"] if m in data["Method"].unique()]
     pivot = data.groupby(["Molecule", "Method"])["Cosine"].mean().unstack("Method")
@@ -154,7 +183,12 @@ def generate_numbers_tex(dry_run: bool):
     import numpy as np
 
     DATA = BENCH / "data" / "simulation_results"
-    tms  = _load_strict_overlap(DATA / "franklin_tms")
+    TMS_MISMATCH_MOLS = ["0007", "0026", "0058"]
+    tms  = _load_strict_overlap(
+        DATA / "franklin_tms",
+        tms_mismatch_mols=TMS_MISMATCH_MOLS,
+        tms_mismatch_fallback=DATA / "franklin",
+    )
     ucb  = _load_strict_overlap(DATA / "ucb_globes_tracers")
     orig = _load_strict_overlap(DATA / "franklin")
 
