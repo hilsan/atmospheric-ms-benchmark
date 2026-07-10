@@ -47,6 +47,8 @@ FIGURE_MAP = [
     # Hyperparameter scan figures
     ("iee_scan/iee_scan_metrics.png",                          "figures/grid_hyperparam/iee_scan_metrics.png"),
     ("iee_scan/mirror_0039_iee03.png",                         "figures/grid_hyperparam/mirror_0039_iee03.png"),
+    # Entropy distribution figure (appendix)
+    ("combined/paper/entropy_distributions.pdf",               "figures/combined/entropy_distributions.pdf"),
 ]
 
 TABLE_MAP = [
